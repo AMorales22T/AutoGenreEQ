@@ -1,4 +1,4 @@
-// 🎧 Audio Enhancer v2.0 — Auto-EQ + Manual
+// 🎧 Audio Enhancer v3.0 — Auto-EQ + Visualizer + History
 (function audioEnhancer() {
   if (!Spicetify?.Player || !Spicetify?.Platform || !Spicetify?.PopupModal || !Spicetify?.Topbar) {
     setTimeout(audioEnhancer, 300); return;
@@ -47,6 +47,9 @@
   let audioCtx=null, sourceNode=null, eqFilters=[], bassFilter=null;
   let compNode=null, preampNode=null, splitter=null, merger=null;
   let gainL=null, gainR=null, connected=false, currentTrackId=null;
+  let analyserNode=null, vizAnimId=null, vizCanvas=null, vizCtx=null;
+  let lastPresetKey=null;
+  const songHistory=[];
 
   function load(){try{const r=Spicetify.LocalStorage.get(STORAGE_KEY);return r?{...DEFAULT,...JSON.parse(r)}:{...DEFAULT}}catch(e){return{...DEFAULT}}}
   function save(){
@@ -78,10 +81,13 @@
       compNode=audioCtx.createDynamicsCompressor();
       compNode.threshold.value=S.compressorThreshold;compNode.ratio.value=S.compressorRatio;
       compNode.knee.value=10;compNode.attack.value=0.003;compNode.release.value=0.25;
+      analyserNode=audioCtx.createAnalyser();
+      analyserNode.fftSize=256;analyserNode.smoothingTimeConstant=0.8;
       splitter=audioCtx.createChannelSplitter(2);
       merger=audioCtx.createChannelMerger(2);
       gainL=audioCtx.createGain();gainR=audioCtx.createGain();
       updateStereo();wire();connected=true;
+      createMiniViz();
       console.log("[AE] ✅ Audio chain ready");
     }catch(e){console.error("[AE] Init error:",e)}
   }
@@ -92,6 +98,7 @@
     for(const f of eqFilters){try{f.disconnect()}catch(e){}}
     try{bassFilter.disconnect()}catch(e){}
     try{compNode.disconnect()}catch(e){}
+    try{analyserNode.disconnect()}catch(e){}
     try{splitter.disconnect()}catch(e){}
     try{gainL.disconnect()}catch(e){}
     try{gainR.disconnect()}catch(e){}
@@ -100,7 +107,7 @@
 
   function wire(){
     disconnectAll();
-    if(!S.enabled){sourceNode.connect(audioCtx.destination);return}
+    if(!S.enabled){sourceNode.connect(analyserNode);analyserNode.connect(audioCtx.destination);return}
     let n=sourceNode;
     n.connect(preampNode);n=preampNode;
     for(const f of eqFilters){n.connect(f);n=f}
@@ -110,8 +117,9 @@
       n.connect(splitter);
       splitter.connect(gainL,0);splitter.connect(gainR,1);
       gainL.connect(merger,0,0);gainR.connect(merger,0,1);
-      merger.connect(audioCtx.destination);
-    }else{n.connect(audioCtx.destination)}
+      merger.connect(analyserNode);
+    }else{n.connect(analyserNode)}
+    analyserNode.connect(audioCtx.destination);
   }
 
   function updateStereo(){
@@ -123,11 +131,81 @@
   function updateBass(){if(bassFilter)bassFilter.gain.value=S.bassBoost}
   function updatePreamp(){if(preampNode)preampNode.gain.value=Math.pow(10,S.preamp/20)}
 
+  // ── Mini Spectrum Visualizer ──
+  function createMiniViz(){
+    if(document.getElementById("ae-mini-viz")) return;
+    const wrap=document.createElement("div");
+    wrap.id="ae-mini-viz";
+    wrap.style.cssText="position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:9999;pointer-events:none;opacity:0.7;transition:opacity .3s";
+    const cv=document.createElement("canvas");
+    cv.width=280;cv.height=32;
+    cv.style.cssText="border-radius:6px;background:rgba(0,0,0,0.4)";
+    wrap.appendChild(cv);
+    document.body.appendChild(wrap);
+    vizCanvas=cv;vizCtx=cv.getContext("2d");
+    renderViz();
+  }
+
+  function renderViz(){
+    if(!analyserNode||!vizCtx||!vizCanvas){vizAnimId=requestAnimationFrame(renderViz);return}
+    const bufLen=analyserNode.frequencyBinCount;
+    const data=new Uint8Array(bufLen);
+    analyserNode.getByteFrequencyData(data);
+    const w=vizCanvas.width,h=vizCanvas.height;
+    vizCtx.clearRect(0,0,w,h);
+    const bars=32;const barW=w/bars-2;
+    const presetColors={
+      flat:"#888",bass_boost:"#ff6b35",treble:"#ffd700",vocal:"#ff69b4",
+      electronic:"#00e5ff",rock:"#ff4444",jazz:"#c49b5e",classical:"#d4af37",
+      hifi:"#a855f7",night:"#6366f1",loudness:"#ef4444",hiphop:"#f59e0b",
+      pop:"#ec4899",acoustic:"#22c55e",rnb:"#8b5cf6",mexicana:"#16a34a",
+      reggaeton:"#f97316",tropical:"#06b6d4",metal:"#dc2626",
+      reggae:"#facc15",indie:"#a3e635",country:"#d97706"
+    };
+    const color=presetColors[S.preset]||"#1db954";
+    for(let i=0;i<bars;i++){
+      const idx=Math.floor(i*bufLen/bars);
+      const val=data[idx]/255;
+      const bh=val*h*0.9;
+      vizCtx.fillStyle=color;
+      vizCtx.globalAlpha=0.4+val*0.6;
+      vizCtx.fillRect(i*(barW+2)+1,h-bh,barW,bh);
+    }
+    vizCtx.globalAlpha=1;
+    vizAnimId=requestAnimationFrame(renderViz);
+  }
+
+  function toggleViz(){
+    const el=document.getElementById("ae-mini-viz");
+    if(el) el.style.display=el.style.display==="none"?"block":"none";
+  }
+
+  // ── Transition Toast ──
+  function showTransition(oldKey,newKey,trackName){
+    const oldP=PRESETS[oldKey],newP=PRESETS[newKey];
+    if(!oldP||!newP||oldKey===newKey) return;
+    const el=document.createElement("div");
+    el.style.cssText="position:fixed;top:60px;left:50%;transform:translateX(-50%) translateY(-20px);z-index:99999;background:rgba(18,18,18,0.95);border:1px solid #333;border-radius:12px;padding:10px 20px;color:#fff;font-family:-apple-system,sans-serif;font-size:13px;display:flex;align-items:center;gap:10px;opacity:0;transition:all .4s ease;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,0.5)";
+    el.innerHTML=`<span style="color:#666">${oldP.name}</span><span style="color:#1db954;font-size:16px">→</span><span style="font-weight:600">${newP.name}</span><span style="color:#555;font-size:11px;margin-left:4px">${(trackName||"").substring(0,25)}</span>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>{el.style.opacity="1";el.style.transform="translateX(-50%) translateY(0)"});
+    setTimeout(()=>{el.style.opacity="0";el.style.transform="translateX(-50%) translateY(-20px)";setTimeout(()=>el.remove(),400)},3000);
+  }
+
+  // ── History ──
+  function addHistory(trackName,artistName,presetKey,genreInfo){
+    songHistory.unshift({track:trackName,artist:artistName,preset:presetKey,genre:genreInfo,time:new Date()});
+    if(songHistory.length>20) songHistory.length=20;
+  }
+
   function applyPreset(key,silent){
     const p=PRESETS[key];if(!p)return;
+    const oldKey=S.preset;
     S.preset=key;S.eq=[...p.eq];S.bassBoost=p.bass;
     updateEQ();updateBass();if(connected)wire();save();
     if(!silent)Spicetify.showNotification("🎛️ Preset: "+p.name);
+    if(silent&&lastPresetKey&&lastPresetKey!==key) showTransition(lastPresetKey,key,Spicetify.Player.data?.item?.name);
+    lastPresetKey=key;
   }
 
   const ARTIST_OVERRIDES = {
@@ -346,8 +424,8 @@
       const preset=matchGenre(genres, artistName);
       logDebug("Preset seleccionado: " + preset);
       applyPreset(preset,true);
-
       const genreDisplay=method!=="keywords"?genres.slice(0,2).join(", "):"fallback";
+      addHistory(track.name||"",artistName,preset,genreDisplay);
       
       if(debugMode) {
         Spicetify.PopupModal.display({
@@ -434,7 +512,8 @@
         Spicetify.PopupModal.hide();setTimeout(showUI,100)},
       saveTrack(){saveTrackPreset(S.preset);Spicetify.PopupModal.hide();setTimeout(showUI,100)},
       clearTrack(){clearTrackPreset();Spicetify.PopupModal.hide();setTimeout(showUI,100)},
-      debugAuto(){Spicetify.PopupModal.hide();setTimeout(() => autoAnalyze(true), 100)}
+      debugAuto(){Spicetify.PopupModal.hide();setTimeout(() => autoAnalyze(true), 100)},
+      toggleViz(){toggleViz()}
     };
 
     const track=Spicetify.Player.data?.item;
@@ -546,7 +625,27 @@
         </div>
       </div>
 
-      <div style="text-align:center;color:#555;font-size:10px;margin-top:6px">Audio Enhancer v2.0 · Auto-EQ</div>
+      <!-- Visualizer Toggle -->
+      <div style="margin-bottom:10px;padding:8px;background:#1a1a1a;border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <span style="font-size:12px;font-weight:600;color:#fff">📊 Visualizer</span>
+          <span style="font-size:10px;color:#888;margin-left:6px">Mini espectro en tiempo real</span>
+        </div>
+        <button onclick="window.__AE.toggleViz()"
+          style="padding:4px 14px;border-radius:12px;border:none;font-size:11px;cursor:pointer;font-weight:600;background:#1db954;color:#000">Show/Hide</button>
+      </div>
+
+      <!-- History -->
+      <div style="margin-bottom:10px;padding:8px;background:#1a1a1a;border-radius:8px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:#fff">📜 Historial reciente</div>
+        ${songHistory.length===0?'<div style="font-size:11px;color:#555">Aún no hay canciones analizadas...</div>':
+          songHistory.slice(0,8).map(h=>{
+            const p=PRESETS[h.preset];
+            return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #222"><div style="flex:1;min-width:0"><div style="font-size:11px;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+h.track+'</div><div style="font-size:10px;color:#666">'+h.artist+' · '+h.genre+'</div></div><span style="font-size:10px;padding:3px 8px;border-radius:10px;background:#282828;color:#b3b3b3;white-space:nowrap;margin-left:8px">'+(p?p.name:h.preset)+'</span></div>';
+          }).join("")}
+      </div>
+
+      <div style="text-align:center;color:#555;font-size:10px;margin-top:6px">Audio Enhancer v3.0 · Auto-EQ + Visualizer</div>
     </div>`;
 
     Spicetify.PopupModal.display({title:"🎧 Audio Enhancer",content:c,isLarge:true});
@@ -564,6 +663,6 @@
 
   if(Spicetify.Player.isPlaying?.()){setTimeout(initChain,500);setTimeout(autoAnalyze,1000)}
 
-  console.log("[AE] v2.0 loaded — Auto-EQ enabled");
-  Spicetify.showNotification("🎧 Audio Enhancer v2.0 cargado");
+  console.log("[AE] v3.0 loaded — Auto-EQ + Visualizer");
+  Spicetify.showNotification("🎧 Audio Enhancer v3.0 cargado");
 })();
