@@ -1,0 +1,14 @@
+{
+  "name": "AutoGenre EQ",
+  "description": "An intelligent, automated Equalizer extension that dynamically analyzes the currently playing song and automatically applies the perfect EQ profile based on its genre, artists, and metadata.",
+  "preview": "cover.png",
+  "main": "audioEnhancer.js",
+  "readme": "README.md",
+  "authors": [
+    {
+      "name": "AMorales22T",
+      "url": "https://github.com/AMorales22T"
+    }
+  ],
+  "tags": ["equalizer", "audio", "automation", "genres"]
+}
