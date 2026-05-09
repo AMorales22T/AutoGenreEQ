@@ -20,27 +20,27 @@
 
   const PRESETS = {
     flat:       {name:"🎚️ Flat",       eq:[0,0,0,0,0,0,0,0],       bass:0},
-    bass_boost: {name:"🔊 Bass Boost", eq:[6,5,3,0,0,0,0,0],       bass:4},
-    treble:     {name:"✨ Treble",     eq:[0,0,0,0,2,4,5,6],       bass:0},
-    vocal:      {name:"🎤 Vocal",      eq:[-2,-1,0,4,5,3,0,-1],    bass:0},
-    electronic: {name:"⚡ Electronic", eq:[5,4,1,0,-1,2,4,5],      bass:3},
-    rock:       {name:"🎸 Rock",       eq:[4,3,1,0,-1,2,4,3],      bass:2},
-    jazz:       {name:"🎷 Jazz",       eq:[3,2,0,2,3,3,2,1],       bass:1},
-    classical:  {name:"🎻 Classical",  eq:[0,0,0,0,0,2,3,4],       bass:0},
-    hifi:       {name:"💎 Hi-Fi",      eq:[3,2,0,1,2,4,5,4],       bass:2},
-    night:      {name:"🌙 Night",      eq:[-3,-2,0,2,1,-1,-2,-4],  bass:0},
-    loudness:   {name:"📢 Loudness",   eq:[5,4,0,0,-1,0,3,5],      bass:3},
-    hiphop:     {name:"🎤 Hip-Hop",    eq:[5,4,1,1,-1,1,2,3],      bass:4},
-    pop:        {name:"🎵 Pop",        eq:[1,2,3,3,2,1,0,-1],      bass:1},
-    acoustic:   {name:"🪕 Acoustic",   eq:[2,1,0,1,2,3,3,2],       bass:0},
-    rnb:        {name:"🎶 R&B",        eq:[4,3,1,2,1,2,2,1],       bass:3},
-    mexicana:   {name:"🎺 Mexicana",   eq:[3,2,0,1,2,3,3,2],       bass:2},
-    reggaeton:  {name:"🔥 Reggaetón",  eq:[5,4,1,0,2,3,4,4],       bass:4},
-    tropical:   {name:"🌴 Tropical",   eq:[3,2,1,2,4,5,4,3],       bass:2},
-    metal:      {name:"🤘 Metal",      eq:[5,3,-1,-2,1,3,5,4],     bass:3},
-    reggae:     {name:"🇯🇲 Reggae",     eq:[4,5,2,0,1,2,3,2],       bass:4},
-    indie:      {name:"🎸 Indie",      eq:[2,1,0,1,2,3,2,1],       bass:1},
-    country:    {name:"🤠 Country",    eq:[2,1,0,2,3,4,3,2],       bass:1}
+    bass_boost: {name:"🔊 Bass Boost", eq:[10,8,5,0,0,0,0,0],      bass:8},
+    treble:     {name:"✨ Treble",     eq:[0,0,0,0,4,7,9,10],      bass:0},
+    vocal:      {name:"🎤 Vocal",      eq:[-4,-2,0,6,8,5,0,-2],    bass:0},
+    electronic: {name:"⚡ Electronic", eq:[8,7,2,0,-2,3,7,8],      bass:6},
+    rock:       {name:"🎸 Rock",       eq:[7,5,2,0,-2,3,6,5],      bass:4},
+    jazz:       {name:"🎷 Jazz",       eq:[5,3,0,3,5,5,3,2],       bass:2},
+    classical:  {name:"🎻 Classical",  eq:[0,0,0,0,0,4,6,7],       bass:0},
+    hifi:       {name:"💎 Hi-Fi",      eq:[5,3,0,2,4,7,8,7],       bass:3},
+    night:      {name:"🌙 Night",      eq:[-5,-3,0,3,2,-2,-4,-6],  bass:0},
+    loudness:   {name:"📢 Loudness",   eq:[8,7,0,0,-2,0,5,8],      bass:6},
+    hiphop:     {name:"🎤 Hip-Hop",    eq:[8,7,2,1,-2,2,4,5],      bass:7},
+    pop:        {name:"🎵 Pop",        eq:[2,3,5,5,3,2,0,-2],      bass:2},
+    acoustic:   {name:"🪕 Acoustic",   eq:[4,2,0,2,4,5,5,3],       bass:0},
+    rnb:        {name:"🎶 R&B",        eq:[7,5,2,3,2,3,3,2],       bass:6},
+    mexicana:   {name:"🎺 Mexicana",   eq:[5,3,0,2,4,6,5,3],       bass:4},
+    reggaeton:  {name:"🔥 Reggaetón",  eq:[9,7,2,0,3,5,7,6],       bass:8},
+    tropical:   {name:"🌴 Tropical",   eq:[5,3,2,3,6,8,6,5],       bass:4},
+    metal:      {name:"🤘 Metal",      eq:[8,5,-2,-3,2,5,8,7],     bass:5},
+    reggae:     {name:"🇯🇲 Reggae",     eq:[7,8,3,0,2,3,5,3],       bass:7},
+    indie:      {name:"🎸 Indie",      eq:[3,2,0,2,4,5,3,2],       bass:2},
+    country:    {name:"🤠 Country",    eq:[3,2,0,3,5,7,5,3],       bass:2}
   };
 
   let S = load();
@@ -86,8 +86,20 @@
     }catch(e){console.error("[AE] Init error:",e)}
   }
 
-  function wire(){
+  function disconnectAll(){
     try{sourceNode.disconnect()}catch(e){}
+    try{preampNode.disconnect()}catch(e){}
+    for(const f of eqFilters){try{f.disconnect()}catch(e){}}
+    try{bassFilter.disconnect()}catch(e){}
+    try{compNode.disconnect()}catch(e){}
+    try{splitter.disconnect()}catch(e){}
+    try{gainL.disconnect()}catch(e){}
+    try{gainR.disconnect()}catch(e){}
+    try{merger.disconnect()}catch(e){}
+  }
+
+  function wire(){
+    disconnectAll();
     if(!S.enabled){sourceNode.connect(audioCtx.destination);return}
     let n=sourceNode;
     n.connect(preampNode);n=preampNode;
@@ -317,8 +329,8 @@
         logDebug("Género (Keywords): " + genres[0]);
       }
 
-      // Save to cache if found via API
-      if(artistId && genres.length && (method==="api" || method==="internal")){
+      // Save to cache if found via API or iTunes
+      if(artistId && genres.length && (method==="api" || method==="internal" || method==="itunes")){
         cache[artistId] = genres;
         // Limit cache size to 500 artists
         const keys = Object.keys(cache);
